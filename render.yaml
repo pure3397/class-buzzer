@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: class-buzzer
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api/state
