@@ -229,6 +229,7 @@ function stageMarkup() {
           <div class="join-url">${escapeHtml(joinUrl)}</div>
           <div class="lobby-setting-note">정답 후 랭킹 표시: 상위 ${rankingLimit()}명</div>
           <div class="lobby-setting-note">정답 ${unitLabel()} 쿨다운: ${state.settings?.winnerCooldown === false ? "끔" : "켬"}</div>
+          <p class="creator-credit">만든 사람 부천여자중학교 윤지숙</p>
         </div>
         <figure class="qr-card">
           <img src="/api/qr.svg?data=${encodeURIComponent(joinUrl)}" alt="${unitLabel()} 입장 QR 코드" />

@@ -330,6 +330,13 @@ button:disabled {
   font-weight: 950;
 }
 
+.creator-credit {
+  margin: 22px 0 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: clamp(13px, 1.1vw, 16px);
+  font-weight: 750;
+}
+
 .qr-card {
   margin: 0;
   padding: clamp(16px, 2vw, 22px);
