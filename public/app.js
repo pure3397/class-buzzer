@@ -369,7 +369,7 @@ function teacherMarkup() {
           <div class="brand-mark">B</div>
           <div>
             <h1>클래스 버저</h1>
-            <p>전자칠판용 퀴즈 진행 패널</p>
+            <p>전자칠판용 퀴즈 진행 패널 · 만든 사람 부천여자중학교 윤지숙</p>
           </div>
         </div>
         <nav class="mode-switch">

@@ -132,6 +132,7 @@ button:disabled {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .mode-switch {
