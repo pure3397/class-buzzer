@@ -146,6 +146,39 @@ async function handleApi(req, res) {
     return sendJson(res, 200, publicState());
   }
 
+  if (req.method === "GET" && req.url.startsWith("/api/qr.svg")) {
+    const requestUrl = new URL(req.url, "http://localhost");
+    const data = requestUrl.searchParams.get("data") || "";
+    if (!data) {
+      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("QR data is required");
+      return;
+    }
+    try {
+      const QRCode = require("qrcode");
+      const svg = await QRCode.toString(data, {
+        type: "svg",
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 360,
+        color: {
+          dark: "#151719",
+          light: "#ffffff",
+        },
+      });
+      res.writeHead(200, {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(svg);
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("QR generator is not installed. Run npm install.");
+      return;
+    }
+  }
+
   if (req.method === "GET" && req.url === "/api/events") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",

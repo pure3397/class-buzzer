@@ -8,6 +8,9 @@
     "start": "node server.js",
     "check": "node --check server.js && node --check public/app.js"
   },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
   "engines": {
     "node": ">=20"
   },
