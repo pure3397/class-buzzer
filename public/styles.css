@@ -411,6 +411,50 @@ button:disabled {
   object-fit: contain;
 }
 
+.teacher-layout:has(.material-stage) {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+.stage-inner:has(.material-stage) {
+  min-height: calc(100dvh - 65px);
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 0;
+}
+
+.material-stage {
+  position: relative;
+  width: 100%;
+  height: calc(100dvh - 65px);
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.material-stage .stage-kicker {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  left: 14px;
+  margin: 0;
+  box-shadow: 0 10px 24px rgba(18, 20, 23, 0.28);
+}
+
+.material-stage .material-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.material-stage .material-frame iframe,
+.material-stage .material-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .ready-stage {
   text-align: center;
 }
