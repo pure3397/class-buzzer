@@ -6,31 +6,65 @@ const crypto = require("crypto");
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-const clients = new Set();
+const rooms = new Map();
+const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const MAX_ROOMS = 100;
+const ROOM_IDLE_MS = 12 * 60 * 60 * 1000;
 
-const state = {
-  roomCode: "CLASS",
-  phase: "lobby",
-  material: {
-    type: "note",
-    title: "클래스 버저",
-    content: "자료 링크나 짧은 문제 메모를 넣고 수업을 시작하세요.",
-    page: 1,
-  },
-  settings: {
-    playMode: "team",
-    rankingLimit: 5,
-    winnerCooldown: true,
-  },
-  buzzerOpen: false,
-  firstBuzz: null,
-  buzzQueue: [],
-  cooldownStudentId: null,
-  roundCooldownStudentId: null,
-  lastAward: null,
-  students: {},
-  events: [],
-};
+function newRoomState(roomCode) {
+  return {
+    roomCode,
+    phase: "lobby",
+    material: {
+      type: "note",
+      title: "클래스 버저",
+      content: "자료 링크나 짧은 문제 메모를 넣고 수업을 시작하세요.",
+      page: 1,
+    },
+    settings: {
+      playMode: "team",
+      rankingLimit: 5,
+      winnerCooldown: true,
+    },
+    buzzerOpen: false,
+    firstBuzz: null,
+    buzzQueue: [],
+    cooldownStudentId: null,
+    roundCooldownStudentId: null,
+    lastAward: null,
+    students: {},
+    events: [],
+  };
+}
+
+function normalizeRoomCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function createRoom() {
+  let roomCode;
+  do {
+    const bytes = crypto.randomBytes(6);
+    roomCode = Array.from(bytes, (byte) => ROOM_ALPHABET[byte % ROOM_ALPHABET.length]).join("");
+  } while (rooms.has(roomCode));
+  const room = {
+    state: newRoomState(roomCode),
+    teacherKey: crypto.randomBytes(32).toString("hex"),
+    clients: new Set(),
+    lastActiveAt: Date.now(),
+  };
+  rooms.set(roomCode, room);
+  return room;
+}
+
+function pruneRooms() {
+  const cutoff = Date.now() - ROOM_IDLE_MS;
+  for (const [code, room] of rooms) {
+    if (room.lastActiveAt < cutoff && room.clients.size === 0) rooms.delete(code);
+  }
+}
+
+setInterval(pruneRooms, 30 * 60 * 1000).unref();
 
 const profanityHints = [
   "ㅅㅂ",
@@ -49,7 +83,8 @@ function now() {
   return new Date().toISOString();
 }
 
-function publicState() {
+function publicRoomState(room) {
+  const state = room.state;
   return {
     ...state,
     students: Object.values(state.students).sort((a, b) => {
@@ -67,14 +102,14 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function broadcast() {
-  const payload = `data: ${JSON.stringify(publicState())}\n\n`;
-  for (const res of clients) {
+function broadcastRoom(room) {
+  const payload = `data: ${JSON.stringify(publicRoomState(room))}\n\n`;
+  for (const res of room.clients) {
     res.write(payload);
   }
 }
 
-function addEvent(message) {
+function addRoomEvent(state, message) {
   state.events.unshift({ id: crypto.randomUUID(), at: now(), message });
   state.events = state.events.slice(0, 8);
 }
@@ -111,18 +146,18 @@ function hasProfanity(alias) {
   return profanityHints.some((word) => compact.includes(word));
 }
 
-function getStudent(studentId) {
+function getRoomStudent(state, studentId) {
   if (!studentId || !state.students[studentId]) {
     return null;
   }
   return state.students[studentId];
 }
 
-function unitLabel() {
+function roomUnitLabel(state) {
   return state.settings.playMode === "individual" ? "학생" : "팀";
 }
 
-function removeFromQueue(studentId) {
+function removeRoomStudentFromQueue(state, studentId) {
   state.buzzQueue = state.buzzQueue.filter((buzz) => buzz.studentId !== studentId);
   if (state.firstBuzz?.studentId === studentId) {
     state.firstBuzz = state.buzzQueue[0] || null;
@@ -130,7 +165,7 @@ function removeFromQueue(studentId) {
   }
 }
 
-function resetRound(phase = "material") {
+function resetRoomRound(state, phase = "material") {
   state.phase = phase;
   state.buzzerOpen = false;
   state.firstBuzz = null;
@@ -142,12 +177,10 @@ function resetRound(phase = "material") {
 }
 
 async function handleApi(req, res) {
-  if (req.method === "GET" && req.url === "/api/state") {
-    return sendJson(res, 200, publicState());
-  }
+  const requestUrl = new URL(req.url, "http://localhost");
+  const pathname = requestUrl.pathname;
 
-  if (req.method === "GET" && req.url.startsWith("/api/qr.svg")) {
-    const requestUrl = new URL(req.url, "http://localhost");
+  if (req.method === "GET" && pathname === "/api/qr.svg") {
     const data = requestUrl.searchParams.get("data") || "";
     if (!data) {
       res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
@@ -179,27 +212,80 @@ async function handleApi(req, res) {
     }
   }
 
-  if (req.method === "GET" && req.url === "/api/events") {
+  if (req.method === "POST" && pathname === "/api/rooms") {
+    pruneRooms();
+    if (rooms.size >= MAX_ROOMS) {
+      return sendJson(res, 503, { error: "현재 만들 수 있는 방이 가득 찼습니다." });
+    }
+    const room = createRoom();
+    return sendJson(res, 201, {
+      roomCode: room.state.roomCode,
+      teacherKey: room.teacherKey,
+      state: publicRoomState(room),
+    });
+  }
+
+  if (req.method === "GET" && pathname === "/api/state" && !requestUrl.searchParams.has("room")) {
+    return sendJson(res, 200, { ok: true });
+  }
+
+  let body = {};
+  if (req.method === "POST") {
+    try {
+      body = await readBody(req);
+    } catch (error) {
+      return sendJson(res, 400, { error: "JSON을 읽을 수 없습니다." });
+    }
+  }
+
+  const roomCode = normalizeRoomCode(
+    req.method === "GET" ? requestUrl.searchParams.get("room") : body.roomCode
+  );
+  const room = rooms.get(roomCode);
+  if (!room) return sendJson(res, 404, { error: "방을 찾을 수 없습니다. 선생님께 새 QR이나 방 코드를 확인해 주세요." });
+  room.lastActiveAt = Date.now();
+
+  const state = room.state;
+  const publicState = () => publicRoomState(room);
+  const broadcast = () => broadcastRoom(room);
+  const addEvent = (message) => addRoomEvent(state, message);
+  const getStudent = (studentId) => getRoomStudent(state, studentId);
+  const unitLabel = () => roomUnitLabel(state);
+  const removeFromQueue = (studentId) => removeRoomStudentFromQueue(state, studentId);
+  const resetRound = (phase) => resetRoomRound(state, phase);
+  const teacherKey = String(req.headers["x-teacher-key"] || "");
+  const suppliedKey = Buffer.from(teacherKey);
+  const expectedKey = Buffer.from(room.teacherKey);
+  const isTeacher = suppliedKey.length === expectedKey.length &&
+    crypto.timingSafeEqual(suppliedKey, expectedKey);
+
+  if (req.method === "GET" && pathname === "/api/state") {
+    return sendJson(res, 200, publicState());
+  }
+
+  if (req.method === "GET" && pathname === "/api/teacher/session") {
+    return isTeacher
+      ? sendJson(res, 200, { state: publicState() })
+      : sendJson(res, 403, { error: "교사용 권한이 없습니다." });
+  }
+
+  if (req.method === "GET" && pathname === "/api/events") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
     });
     res.write(`data: ${JSON.stringify(publicState())}\n\n`);
-    clients.add(res);
-    req.on("close", () => clients.delete(res));
+    room.clients.add(res);
+    req.on("close", () => room.clients.delete(res));
     return;
   }
 
   if (req.method !== "POST") {
     return sendJson(res, 404, { error: "Not found" });
   }
-
-  let body;
-  try {
-    body = await readBody(req);
-  } catch (error) {
-    return sendJson(res, 400, { error: "JSON을 읽을 수 없습니다." });
+  if (pathname.startsWith("/api/teacher/") && !isTeacher) {
+    return sendJson(res, 403, { error: "교사용 권한이 없습니다." });
   }
 
   if (req.url === "/api/join") {

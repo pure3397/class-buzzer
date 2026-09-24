@@ -2,8 +2,12 @@ const app = document.querySelector("#app");
 const params = new URLSearchParams(window.location.search);
 const role = params.get("role") === "teacher" ? "teacher" : "student";
 const baseUrl = window.location.origin;
+const normalizeRoomCode = (value) => String(value || "").trim().toUpperCase();
+let roomCode = normalizeRoomCode(params.get("room"));
+let teacherKey = "";
+let eventSource = null;
 let state = null;
-let studentId = localStorage.getItem("class-buzzer-student-id") || "";
+let studentId = roomCode ? localStorage.getItem(`class-buzzer-student-id-${roomCode}`) || "" : "";
 let lastError = "";
 let localMaterialUrl = "";
 
@@ -42,8 +46,11 @@ function escapeHtml(value) {
 async function api(path, body = {}) {
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      ...(path.startsWith("/api/teacher/") ? { "X-Teacher-Key": teacherKey } : {}),
+    },
+    body: JSON.stringify({ ...body, roomCode }),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -53,15 +60,103 @@ async function api(path, body = {}) {
 }
 
 function connectEvents() {
-  const source = new EventSource("/api/events");
+  eventSource?.close();
+  const connectedRoomCode = roomCode;
+  const source = new EventSource(`/api/events?room=${encodeURIComponent(connectedRoomCode)}`);
+  eventSource = source;
   source.onmessage = (event) => {
+    if (eventSource !== source) return;
     state = JSON.parse(event.data);
+    lastError = "";
     render();
   };
-  source.onerror = () => {
+  source.onerror = async () => {
+    if (eventSource !== source) return;
+    try {
+      const response = await fetch(`/api/state?room=${encodeURIComponent(connectedRoomCode)}`);
+      if (eventSource !== source) return;
+      if (response.status === 404) {
+        eventSource?.close();
+        state = null;
+        if (role === "teacher") {
+          await initializeTeacher(true);
+        } else {
+          roomCode = "";
+          studentId = "";
+          window.history.replaceState(null, "", "?role=student");
+          lastError = "방이 종료되었습니다. 선생님께 새 방 코드를 확인해 주세요.";
+          render();
+        }
+        return;
+      }
+    } catch (error) {
+      // EventSource retries transient network errors automatically.
+    }
     lastError = "서버 연결을 다시 시도하고 있습니다.";
     render();
   };
+}
+
+function updateRoomUrl() {
+  window.history.replaceState(null, "", `?role=${role}&room=${encodeURIComponent(roomCode)}`);
+}
+
+function savedTeacherRooms() {
+  try {
+    return JSON.parse(localStorage.getItem("class-buzzer-teacher-rooms") || "{}") || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+async function initializeTeacher(createFresh = false) {
+  const savedRooms = savedTeacherRooms();
+  const preferredRoom = roomCode || localStorage.getItem("class-buzzer-last-teacher-room") || "";
+  if (!createFresh && preferredRoom && savedRooms[preferredRoom]) {
+    const response = await fetch(`/api/teacher/session?room=${encodeURIComponent(preferredRoom)}`, {
+      headers: { "X-Teacher-Key": savedRooms[preferredRoom] },
+    });
+    if (response.ok) {
+      roomCode = preferredRoom;
+      teacherKey = savedRooms[preferredRoom];
+      state = (await response.json()).state;
+      updateRoomUrl();
+      connectEvents();
+      render();
+      return;
+    }
+  }
+  const created = await api("/api/rooms");
+  roomCode = created.roomCode;
+  teacherKey = created.teacherKey;
+  state = created.state;
+  savedRooms[roomCode] = teacherKey;
+  localStorage.setItem("class-buzzer-teacher-rooms", JSON.stringify(savedRooms));
+  localStorage.setItem("class-buzzer-last-teacher-room", roomCode);
+  updateRoomUrl();
+  connectEvents();
+  render();
+}
+
+async function initializeStudent() {
+  if (!roomCode) {
+    render();
+    return;
+  }
+  const response = await fetch(`/api/state?room=${encodeURIComponent(roomCode)}`);
+  if (!response.ok) {
+    roomCode = "";
+    studentId = "";
+    window.history.replaceState(null, "", "?role=student");
+    lastError = "방을 찾을 수 없습니다. 선생님께 코드를 확인해 주세요.";
+    render();
+    return;
+  }
+  state = await response.json();
+  studentId = localStorage.getItem(`class-buzzer-student-id-${roomCode}`) || "";
+  updateRoomUrl();
+  connectEvents();
+  render();
 }
 
 function currentStudent() {
@@ -217,7 +312,7 @@ function materialPreview() {
 }
 
 function stageMarkup() {
-  const joinUrl = `${baseUrl}/?role=student`;
+  const joinUrl = `${baseUrl}/?role=student&room=${encodeURIComponent(roomCode)}`;
   if (state.phase === "lobby") {
     return `
       <section class="lobby-stage">
@@ -479,6 +574,11 @@ function teacherMarkup() {
             </div>
             ${lastError ? `<p class="status">${escapeHtml(lastError)}</p>` : ""}
           </section>
+          <section class="panel-section">
+            <h2>방 관리</h2>
+            <p class="room-help">현재 방 <strong>${escapeHtml(roomCode)}</strong> · 다른 수업을 열 때 새 방을 만드세요.</p>
+            <button class="ghost-button" data-action="new-room">새 방 만들기</button>
+          </section>
         </aside>
       </section>
     </main>
@@ -492,12 +592,14 @@ function studentMarkup() {
       <main class="student-page">
         <section class="student-card">
           <div class="student-brand"><span class="student-brand-icon" aria-hidden="true">✦</span><span>클래스 버저</span></div>
+          <div class="student-ready-pill">방 ${escapeHtml(roomCode)}</div>
           <h1>클래스 버저</h1>
           <p>${nameLabel()}을 입력하면 선생님 승인 뒤 버저에 참여할 수 있습니다.</p>
           <form class="form-grid" id="join-form">
             <input class="input" name="alias" maxlength="16" placeholder="${isTeamMode() ? "예: 번개팀, 3모둠" : "예: 하늘, 민재"}" required />
             <button class="pill-button" type="submit">입장 요청</button>
           </form>
+          <button class="ghost-button change-room-button" data-action="change-room">다른 방 코드 입력</button>
           ${lastError ? `<p class="status">${escapeHtml(lastError)}</p>` : ""}
         </section>
       </main>
@@ -535,7 +637,7 @@ function studentMarkup() {
     <main class="student-page">
       <section class="student-card ${canBuzz ? "is-ready" : "is-waiting"}">
         <div class="student-brand"><span class="student-brand-icon" aria-hidden="true">✦</span><span>클래스 버저</span></div>
-        <div class="student-ready-pill">${statusLabel}</div>
+        <div class="student-ready-pill">방 ${escapeHtml(roomCode)} · ${statusLabel}</div>
         <h1>${escapeHtml(me.alias)}</h1>
         <p>내 점수: <strong>${me.score}</strong>점</p>
         <div class="student-status">${escapeHtml(message)}</div>
@@ -544,6 +646,7 @@ function studentMarkup() {
           <span>${canBuzz ? "누르면 순서대로 대기해요!" : "선생님 안내를 기다려 주세요!"}</span>
           <img src="/mascot-bunny-outline.png" alt="" />
         </div>
+        <button class="ghost-button change-room-button" data-action="change-room">다른 방으로 이동</button>
         ${
           me.status === "rejected" || me.status === "removed"
             ? `<button class="ghost-button" data-action="clear-student">${nameLabel()} 다시 입력</button>`
@@ -556,6 +659,23 @@ function studentMarkup() {
 }
 
 function render() {
+  if (role === "student" && !roomCode) {
+    app.innerHTML = `
+      <main class="student-page">
+        <section class="student-card">
+          <div class="student-brand"><span class="student-brand-icon" aria-hidden="true">✦</span><span>클래스 버저</span></div>
+          <h1>방 코드를 입력해요</h1>
+          <p>선생님 화면에 있는 6자리 코드를 입력하세요.</p>
+          <form class="form-grid" id="room-form">
+            <input class="input room-input" name="roomCode" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="예: ABC234" aria-label="방 코드" required />
+            <button class="pill-button" type="submit">방 들어가기</button>
+          </form>
+          ${lastError ? `<p class="status">${escapeHtml(lastError)}</p>` : ""}
+        </section>
+      </main>
+    `;
+    return;
+  }
   if (!state) {
     app.innerHTML = `<main class="student-page"><section class="student-card"><h1>클래스 버저</h1><p>연결 중입니다.</p></section></main>`;
     return;
@@ -572,7 +692,17 @@ document.addEventListener("submit", async (event) => {
     if (form.id === "join-form") {
       const data = await api("/api/join", { alias: formData.get("alias") });
       studentId = data.studentId;
-      localStorage.setItem("class-buzzer-student-id", studentId);
+      localStorage.setItem(`class-buzzer-student-id-${roomCode}`, studentId);
+      state = data.state;
+      render();
+    }
+    if (form.id === "room-form") {
+      roomCode = normalizeRoomCode(formData.get("roomCode"));
+      if (!/^[A-Z2-9]{6}$/.test(roomCode)) {
+        roomCode = "";
+        throw new Error("방 코드는 영문과 숫자 6자리입니다.");
+      }
+      await initializeStudent();
     }
     if (form.id === "material-form") {
       const file = formData.get("file");
@@ -679,8 +809,20 @@ document.addEventListener("click", async (event) => {
     if (action === "buzz") await api("/api/student/buzz", { studentId });
     if (action === "clear-student") {
       studentId = "";
-      localStorage.removeItem("class-buzzer-student-id");
+      localStorage.removeItem(`class-buzzer-student-id-${roomCode}`);
       render();
+    }
+    if (action === "change-room") {
+      eventSource?.close();
+      roomCode = "";
+      studentId = "";
+      state = null;
+      window.history.replaceState(null, "", "?role=student");
+      render();
+    }
+    if (action === "new-room") {
+      eventSource?.close();
+      await initializeTeacher(true);
     }
   } catch (error) {
     lastError = error.message;
@@ -689,4 +831,7 @@ document.addEventListener("click", async (event) => {
 });
 
 render();
-connectEvents();
+(role === "teacher" ? initializeTeacher() : initializeStudent()).catch((error) => {
+  lastError = error.message || "방을 연결하지 못했습니다.";
+  render();
+});
