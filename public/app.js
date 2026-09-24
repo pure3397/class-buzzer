@@ -221,20 +221,30 @@ function stageMarkup() {
   if (state.phase === "lobby") {
     return `
       <section class="lobby-stage">
-        <div class="lobby-copy">
-          <p class="stage-kicker">입장 준비</p>
-          <h2 class="stage-title">클래스 버저</h2>
-          <p class="stage-subtitle">${unitLabel()}은 QR을 찍고 ${nameLabel()}을 입력합니다. 교사가 승인한 ${unitLabel()}만 버저에 참여합니다.</p>
-          <div class="room-code">방 코드 <span>${escapeHtml(state.roomCode)}</span></div>
-          <div class="join-url">${escapeHtml(joinUrl)}</div>
-          <div class="lobby-setting-note">정답 후 랭킹 표시: 상위 ${rankingLimit()}명</div>
-          <div class="lobby-setting-note">정답 ${unitLabel()} 쿨다운: ${state.settings?.winnerCooldown === false ? "끔" : "켬"}</div>
-          <p class="creator-credit">만든 사람 부천여자중학교 윤지숙</p>
+        <div class="lobby-intro">
+          <div class="lobby-copy">
+            <p class="stage-kicker">✦ 입장 준비</p>
+            <h2 class="stage-title">퀴즈에 오신 걸<br />환영해요!</h2>
+            <p class="stage-subtitle">${unitLabel()}은 QR을 찍고 ${nameLabel()}을 입력해요.<br />교사가 승인하면 버저에 참여할 수 있어요.</p>
+          </div>
+          <img class="lobby-mascot" src="/mascot-bunny-outline.png" alt="" />
         </div>
-        <figure class="qr-card">
-          <img src="/api/qr.svg?data=${encodeURIComponent(joinUrl)}" alt="${unitLabel()} 입장 QR 코드" />
-          <figcaption>${unitLabel()} 입장 QR</figcaption>
-        </figure>
+        <div class="lobby-bottom">
+          <div class="room-panel">
+            <h3><span aria-hidden="true">✿</span> 방 코드</h3>
+            <strong class="room-code">${escapeHtml(state.roomCode)}</strong>
+            <p>${unitLabel()}에게 방 코드를 알려주세요!</p>
+            <div class="join-url">${escapeHtml(joinUrl)}</div>
+            <div class="lobby-setting-note">정답 후 랭킹: 상위 ${rankingLimit()}명</div>
+            <div class="lobby-setting-note">정답 ${unitLabel()} 쿨다운: ${state.settings?.winnerCooldown === false ? "끔" : "켬"}</div>
+          </div>
+          <figure class="qr-card">
+            <h3><span aria-hidden="true">✦</span> 참가 QR</h3>
+            <img src="/api/qr.svg?data=${encodeURIComponent(joinUrl)}" alt="${unitLabel()} 입장 QR 코드" />
+            <figcaption>QR을 스캔해 참가할 수 있어요!</figcaption>
+          </figure>
+        </div>
+        <p class="creator-credit">만든 사람 부천여자중학교 윤지숙</p>
       </section>
     `;
   }
@@ -366,7 +376,7 @@ function teacherMarkup() {
     <main class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark">B</div>
+          <div class="brand-mark" aria-hidden="true">✦</div>
           <div>
             <h1>클래스 버저</h1>
             <p>전자칠판용 퀴즈 진행 패널 · 만든 사람 부천여자중학교 윤지숙</p>
@@ -386,7 +396,7 @@ function teacherMarkup() {
         </div>
         <aside class="side-panel">
           <section class="panel-section">
-            <h2>첫 화면 설정</h2>
+            <h2>수업 설정</h2>
             <form class="form-grid" id="settings-form">
               <label class="field-label" for="play-mode">진행 방식</label>
               <select class="select" id="play-mode" name="playMode">
@@ -401,6 +411,16 @@ function teacherMarkup() {
               </label>
               <button class="dark-button" type="submit">설정 저장</button>
             </form>
+          </section>
+          <section class="panel-section">
+            <h2>버저 판정</h2>
+            <div class="button-row">
+              <button class="pill-button" data-action="open-buzzer">버저 열기</button>
+              <button class="success-button" data-action="correct" ${currentBuzz() ? "" : "disabled"}>정답 인정 +10</button>
+              <button class="danger-button" data-action="incorrect" ${currentBuzz() ? "" : "disabled"}>오답, 다음 ${unitLabel()}</button>
+              <button class="ghost-button" data-action="phase" data-phase="material">다음 문제</button>
+              <button class="ghost-button" data-action="reset-round">라운드 초기화</button>
+            </div>
           </section>
           <section class="panel-section">
             <h2>문제 자료 연결</h2>
@@ -427,16 +447,6 @@ function teacherMarkup() {
                   </div>`
                 : ""
             }
-          </section>
-          <section class="panel-section">
-            <h2>버저 판정</h2>
-            <div class="button-row">
-              <button class="pill-button" data-action="open-buzzer">버저 열기</button>
-              <button class="success-button" data-action="correct" ${currentBuzz() ? "" : "disabled"}>정답 인정 +10</button>
-              <button class="danger-button" data-action="incorrect" ${currentBuzz() ? "" : "disabled"}>오답, 다음 ${unitLabel()}</button>
-              <button class="ghost-button" data-action="phase" data-phase="material">다음 문제</button>
-              <button class="ghost-button" data-action="reset-round">라운드 초기화</button>
-            </div>
           </section>
           <section class="panel-section">
             <h2>승인 대기 <span>${pending.length}</span></h2>
@@ -481,6 +491,7 @@ function studentMarkup() {
     return `
       <main class="student-page">
         <section class="student-card">
+          <div class="student-brand"><span class="student-brand-icon" aria-hidden="true">✦</span><span>클래스 버저</span></div>
           <h1>클래스 버저</h1>
           <p>${nameLabel()}을 입력하면 선생님 승인 뒤 버저에 참여할 수 있습니다.</p>
           <form class="form-grid" id="join-form">
@@ -498,6 +509,13 @@ function studentMarkup() {
   const current = currentBuzz();
   const isCoolingDown = me.id === state.roundCooldownStudentId;
   const canBuzz = isApproved && state.buzzerOpen && myQueueIndex === -1 && !isCoolingDown;
+  const statusLabel = !isApproved
+    ? statusText[me.status] || "입장 대기"
+    : canBuzz
+      ? "버저 준비 완료"
+      : state.phase === "results"
+        ? "퀴즈 종료"
+        : "수업 진행 중";
   let message = "선생님 승인을 기다리고 있습니다.";
   if (me.status === "rejected") message = `입장이 승인되지 않았습니다. 다른 ${nameLabel()}으로 다시 요청해 주세요.`;
   if (me.status === "removed") message = "참여 목록에서 제외되었습니다.";
@@ -515,11 +533,17 @@ function studentMarkup() {
 
   return `
     <main class="student-page">
-      <section class="student-card">
+      <section class="student-card ${canBuzz ? "is-ready" : "is-waiting"}">
+        <div class="student-brand"><span class="student-brand-icon" aria-hidden="true">✦</span><span>클래스 버저</span></div>
+        <div class="student-ready-pill">${statusLabel}</div>
         <h1>${escapeHtml(me.alias)}</h1>
         <p>내 점수: <strong>${me.score}</strong>점</p>
         <div class="student-status">${escapeHtml(message)}</div>
-        <button class="buzzer-button" data-action="buzz" ${canBuzz ? "" : "disabled"}>BUZZ</button>
+        <button class="buzzer-button" data-action="buzz" ${canBuzz ? "" : "disabled"}>BUZZ!</button>
+        <div class="student-footer">
+          <span>${canBuzz ? "누르면 순서대로 대기해요!" : "선생님 안내를 기다려 주세요!"}</span>
+          <img src="/mascot-bunny-outline.png" alt="" />
+        </div>
         ${
           me.status === "rejected" || me.status === "removed"
             ? `<button class="ghost-button" data-action="clear-student">${nameLabel()} 다시 입력</button>`
