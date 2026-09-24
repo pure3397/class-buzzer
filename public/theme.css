@@ -422,15 +422,15 @@ button:disabled { opacity: .55; }
   min-height: 235px;
   gap: 8px;
 }
-.lobby-copy { flex: 1; max-width: calc(100% - 175px); }
+.lobby-copy { flex: 1; max-width: calc(100% - 190px); }
 .lobby-intro .stage-title { font-size: clamp(39px, 4.3vw, 70px); }
 .lobby-intro .stage-subtitle { margin-bottom: 12px; font-size: clamp(16px, 1.45vw, 22px); }
 .lobby-mascot {
   display: block;
   position: absolute;
-  right: -22px;
-  bottom: -24px;
-  width: min(46%, 280px);
+  right: -70px;
+  bottom: -35px;
+  width: min(63%, 390px);
   height: auto;
   filter: drop-shadow(0 8px 14px rgba(155,116,204,.10));
 }
@@ -514,4 +514,8 @@ button:disabled { opacity: .55; }
   .student-brand { margin-bottom: 13px; }
   .student-status { min-height: 60px; padding: 11px; margin: 12px 0 16px; }
   .buzzer-button { width: min(225px, 62vw); margin-bottom: 17px; }
+}
+
+@media (min-width: 450px) and (max-width: 680px) {
+  .lobby-mascot { width: 230px; right: -46px; bottom: -43px; }
 }
